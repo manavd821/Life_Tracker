@@ -1,0 +1,6 @@
+- Each Behaviour and task must belongs to exactly one user
+- Each Behaviour must have either a timestamp or a duration with a start time.
+- Behaviour will be immutable to edit after 2 calelender days from its timestamp.
+- An Expense is always a positive number.
+- If a Behavior has a category, exactly one corresponding specialized record must exist.
+- A Behavior must not be auto-created without user confirmation.
