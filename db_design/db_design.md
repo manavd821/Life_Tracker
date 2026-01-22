@@ -4,7 +4,7 @@
 
 ## AuthIdentity
 - auth_id(PK, Text, default uid)
-- user_id(FK->User.user_id)
+- user_id(FK->User.user_id, not null)
 - provider(ENUM : EMAIL, GOOGLE, GITHUB)
 - email(Text, not null)
 - password_hash(nullable)
