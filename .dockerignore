@@ -1,0 +1,9 @@
+__pycache__/
+.venv/
+venv/
+*.pyc
+.env
+Readme.md
+api_design/
+db_design/
+*.md
