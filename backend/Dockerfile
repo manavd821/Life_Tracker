@@ -40,5 +40,5 @@ COPY . .
 
 # Activate venv
 ENV PYTHONUNBUFFERED=1
-
+ENV PYTHONPATH=/app/src
 CMD ["uv", "run", "uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
