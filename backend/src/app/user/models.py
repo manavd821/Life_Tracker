@@ -1,17 +1,17 @@
-from ast import List
 import uuid
 from app.db.base import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
+from typing import List
 ## User
 # - user_id(PK, Text, default uid)
 # - username(TEXT, not null)
 
 class User(Base):
     
-    __tablename__ = "user"
+    __tablename__ = "users"
     
-    user_id : Mapped[UUID] = mapped_column(
+    user_id : Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True, 
         default=uuid.uuid4,
