@@ -28,7 +28,7 @@ class AuthIdentity(Base):
         default=uuid.uuid4,
     )
     user_id : Mapped[UUID] = mapped_column(
-        ForeignKey("user.user_id"), 
+        ForeignKey("users.user_id"), 
         nullable=False,
     )
     provider : Mapped[AuthProvider] = mapped_column(
