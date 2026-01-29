@@ -1,6 +1,14 @@
 import enum
 
-class AuthProvider(enum.Enum):
+class AuthProvider(str, enum.Enum):
     EMAIL = "EMAIL"
     GOOGLE = "GOOGLE"
     GITHUB = "GITHUB"
+
+class AuthErrorEnum(str, enum.Enum):
+    INVALID_AUTH_REQUEST = "INVALID_AUTH_REQUEST"
+    AUTH_CONFLICT = "AUTH_CONFLICT"
+    AUTH_NOT_FOUND = "AUTH_NOT_FOUND"
+    AUTH_FAILED = "AUTH_FAILED"
+    AUTH_FORBIDDEN = "AUTH_FORBIDDEN"
+    AUTH_RATE_LIMITED = "AUTH_RATE_LIMITED"
