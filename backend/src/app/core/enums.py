@@ -12,3 +12,9 @@ class AuthErrorEnum(str, enum.Enum):
     AUTH_FAILED = "AUTH_FAILED"
     AUTH_FORBIDDEN = "AUTH_FORBIDDEN"
     AUTH_RATE_LIMITED = "AUTH_RATE_LIMITED"
+    
+class ENV(str, enum.Enum):
+    PRODUCTION = "PRODUCTION"
+    DEVELOPMENT = "DEVELOPMENT"
+    TESTING = "TESTING"
+    

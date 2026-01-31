@@ -62,6 +62,9 @@ services:
       - life-tracker-dev-network
     volumes:
       - ./backend:/app:cached
+    environment:
+      APP_ENV : DEVELOPMENT
+      LOG_LEVEL : DEBUG
     secrets:
       - POSTGRES_DB
       - POSTGRES_USER

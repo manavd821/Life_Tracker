@@ -2,18 +2,17 @@ from pathlib import Path
 from typing import Annotated
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
 from fastapi import Depends
+from app.main import settings
 
-def read_secret(name : str):
-    path = Path('/run/secrets') / name
-    if not path.exists():
-        raise RuntimeError(f"secret {name} not found")
-    return path.read_text().strip()
+database = settings.database
 
-POSTGRES_DB = read_secret("POSTGRES_DB")
-POSTGRES_PASSWORD = read_secret("POSTGRES_PASSWORD")
-POSTGRES_USER = read_secret("POSTGRES_USER")
+POSTGRES_DB = database.POSTGRES_DB
+POSTGRES_PASSWORD = database.POSTGRES_PASSWORD
+POSTGRES_USER = database.POSTGRES_USER
+POSTGRES_PORT = database.POSTGRES_PORT
+POSTGRES_HOST = database.POSTGRES_HOST
 
-DB_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@postgresql:5432/{POSTGRES_DB}"
+DB_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
 engine = create_async_engine(DB_URL, echo = True)
 
