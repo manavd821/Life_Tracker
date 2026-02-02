@@ -1,12 +1,19 @@
 from fastapi import Request
-import logging, time
-
+import logging
+import time
+import uuid
+from app.core.log_context import request_id_ctx
 
 logger = logging.getLogger("http.request")
 
 async def logging_middleware(request : Request, call_next):
     start_time = time.monotonic()
+    
+    req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = req_id
+    token = request_id_ctx.set(req_id)
     response = None
+    
     try:
         response = await call_next(request)
         return response
@@ -23,6 +30,7 @@ async def logging_middleware(request : Request, call_next):
             request.url.path,
             extra={
                 "status_code" : status_code,
-                "duration" : round(duration*1000, 2),
+                "duration_ms" : round(duration*1000, 2),
             }
         )
+        request_id_ctx.reset(token)
