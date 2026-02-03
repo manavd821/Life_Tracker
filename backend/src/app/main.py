@@ -14,7 +14,6 @@ def create_app() -> FastAPI:
     
     from app.auth.router import router as auth_router
     from app.core.utils import (
-        register_execption_handler,
         add_all_middlewares,
     )
     
@@ -27,7 +26,6 @@ def create_app() -> FastAPI:
         prefix="/api/v1/auth", 
         tags=["auth"]
     )
-    register_execption_handler(app)
     
     return app
 
