@@ -15,11 +15,12 @@ def create_app() -> FastAPI:
     from app.auth.router import router as auth_router
     from app.core.utils import (
         add_all_middlewares,
+        register_exception_handlers,
     )
-    
     app = FastAPI()
     
     add_all_middlewares(app)
+    register_exception_handlers(app)
     
     app.include_router(
         router=auth_router, 

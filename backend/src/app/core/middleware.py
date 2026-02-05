@@ -23,7 +23,7 @@ async def logging_middleware(request : Request, call_next):
     finally:
         duration = time.monotonic() - start_time 
         status_code = response.status_code if response is not None else 500
-        print(request.url.path)
+        
         logger.info(
             "%s %s",
             request.method,
