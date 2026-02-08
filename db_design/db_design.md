@@ -12,6 +12,18 @@
 - created_at(not null)
 UNIQUE(provider, email)
 
+## RefreshToken
+- token_id(PK, Text, default uid)
+- user_id(FK->User.user_id)
+- hashed_refresh_token(Text, unique ,not null)
+- session_id(not null)
+- created_at(not null)
+- expires_at(not null)
+- rotated_at(nullable)
+- revoked_at(nullable)
+- ip_address (nullable)
+- user_agent (nullable)
+
 ## Task
 - task_id(PK, Text)(default uid)
 - uid(not null, FK->User.uid)

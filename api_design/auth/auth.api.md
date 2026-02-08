@@ -9,8 +9,18 @@
 ### Server Logic
 1. Verify Credentials
 2. Look up for provider
-    - if provider = EMAIL -> Send OTP message to client's email -> client verify OTP on /auth/verify route
-    - Provider is 3rd party(i.e. Google, Github) -> authentication succesful
+3. if provider == EMAIL : 
+    - It must have password & username. If not -> raise InvalidInputException 
+    - check if email already exists or not
+        - DB select query with provided email
+        - if response is not None -> raise AuthConflictException("Email already exists")
+    - Generate OTP
+    - Store temporary record in redis to remember state 
+        - (verification_id, email, username, password_hash, otp_hash, issued_at ,expired_at, attempts)
+    - return response with verification_id and message : "OTP sent successfully"
+    - Now, it's frontend responsiblity to redirect client to this route: POST /api/v1/auth/verify
+    
+4. Provider is 3rd party(i.e. Google, Github) -> authentication succesful
 3. generate access + refresh tokens
 4. Upadate db with email, provider, is_verified:true, hashed_refresh_tokens, etc .
 5. Store access + refresh token in headers or cookie.
@@ -35,18 +45,24 @@
 # Verify
 ## POST /api/v1/auth/verify
 - Intent: verify the email if provider is EMAIL, create user and issue token
-- input: provider, email, OTP
+- input: verification_id, OTP(from cookie)
 - Output: access_token, refresh_token
 - Error: Invalid or Expired OTP
 ### Server Logic
-1. If provider != EMAIl -> reject
-2. If OTP Invalid or expired -> reject
-2. Look up for email in db
-   - if exists → signin path
-   - if not exists → signup path (create User + identity)
-3. Mark identity as verified(is_verified: true)
-4. Issue access + refresh tokens
-5. Store access + refresh token in headers or cookie.
+1. Fetch PendingAuthVerification by verification_id.
+2. If not found → Invalid or expired request.
+3. Check expiration.
+4. Compare hashed OTP.
+5. If mismatch:
+    - increment attempts
+    - if attempts exceed threshold → delete record
+    - return error
+6. If valid:
+    - Create User
+    - Create AuthIdentity (provider=EMAIL, is_verified=True)
+    - Delete PendingAuthVerification record
+    - Issue session token (JWT or session cookie)
+7. Return success response with token.
 
 
 # refresh token

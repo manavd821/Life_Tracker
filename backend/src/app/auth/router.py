@@ -11,6 +11,8 @@ router = APIRouter()
 # 3. generate access + refresh tokens
 # 4. Upadate db with email, provider, is_verified:true, hashed_refresh_tokens, etc .
 # 5. Store access + refresh token in headers or cookie.
+# Password → argon2 (slow, salted)
+# Refresh token → SHA256 (fast, deterministic)
 
 @router.post('/signup', response_model=AuthSignUpInitResponse)
 async def signup(data : AuthSignUpInitRequest):

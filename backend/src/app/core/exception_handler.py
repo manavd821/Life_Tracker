@@ -26,25 +26,23 @@ async def unknown_error_handler(request : Request, exec : Exception):
 async def handle_app_error(request : Request,exec : AppError):
     
     async with bind_request_context(request):
-        if exec.log_level >= logging.ERROR:
-            logging.log(
-                exec.log_level,
-                exec.message,
-                exc_info=True,
-                stack_info=True,
-                extra={"error_code" : exec.code}
-            )
-            payload = {
-                "code" : exec.code
-            }
+        logging.log(
+            exec.log_level,
+            exec.message,
+            exc_info=exec.log_level >= logging.ERROR,
+            extra={"error_code" : exec.code},
+        )
+        payload = {
+            "code" : exec.code,
+        }
+        
+        if exec.expose:
+            payload["message"] = exec.message
             
-            if exec.expose:
-                payload["message"] = exec.message
-                
-            return JSONResponse(
-                content=payload,
-                status_code=exec.status_code,
-            )
+        return JSONResponse(
+            content=payload,
+            status_code=exec.status_code,
+        )
     
 
 async def validation_error_handler(request : Request,exec: RequestValidationError):
@@ -62,6 +60,6 @@ async def validation_error_handler(request : Request,exec: RequestValidationErro
         }
         return JSONResponse(
             content=payload,
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
         
