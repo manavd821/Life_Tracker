@@ -17,6 +17,8 @@ class Setting:
     app_env : ENV
     log_level : str
     database : DatabaseConfig
+    jwt_secret_key : str
+    access_token_expires_minutes : float
     
 def load_settings() -> Setting:
     database = {
@@ -35,9 +37,12 @@ def load_settings() -> Setting:
     if not log_level:
         log_level = "DEBUG" if app_env == ENV.DEVELOPMENT else "INFO"
     
-    
+    jwt_secret_key = read_secret("JWT_SECRET_KEY")
+    access_token_expires_minutes = float(os.getenv("access_token_expires_minutes", 30.0))
     return Setting(
         app_env = app_env,
         log_level=log_level,
         database = DatabaseConfig(**database),
+        jwt_secret_key = jwt_secret_key,
+        access_token_expires_minutes=access_token_expires_minutes,
     )
