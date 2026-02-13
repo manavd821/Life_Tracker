@@ -1,46 +1,47 @@
 # signup
-## POST /api/v1/auth/signup/init
+## POST /api/v1/auth/email/signup/init
 - Intent: create account via email OTP and authenticate user
-- Input: email, username ,provider, password(Optional), device_info(Optional)
+- Input: email, username, password, device_info(Optional)
 - Output: 
     - Send OTP message(provider:EMAIL)
     - OR access_token + refresh_token(3rd party provider only)
 - Errors: email exists, otp invalid
 ### Server Logic
 1. Verify Credentials
-2. Look up for provider
-3. if provider == EMAIL : 
-    - It must have password & username. If not -> raise InvalidInputException 
-    - check if email already exists or not
-        - DB select query with provided email
-        - if response is not None -> raise AuthConflictException("Email already exists")
-    - Generate OTP
+2. provider is EMAIL here.
+3. It must have password & username. If not -> raise InvalidInputException 
+4. check if email already exists or not
+    - DB select query with provided email
+    - if response is not None -> raise AuthError("Email already exists")
+5. Generate OTP
     - Store temporary record in redis to remember state 
         - (verification_id, email, username, password_hash, otp_hash, issued_at ,expired_at, attempts)
     - return response with verification_id and message : "OTP sent successfully"
-    - Now, it's frontend responsiblity to redirect client to this route: POST /api/v1/auth/verify
+    - Now, it's frontend responsiblity to redirect client to this route: POST /api/v1/auth/email/verify
     
-4. Provider is 3rd party(i.e. Google, Github) -> authentication succesful
-3. generate access + refresh tokens
-4. Upadate db with email, provider, is_verified:true, hashed_refresh_tokens, etc .
-5. Store access + refresh token in headers or cookie.
-
 # signin
-## POST /api/v1/auth/signin/init
+## POST /api/v1/auth/email/signin/init
 - Intent: authenticate the user through credentials 
-- Input: email, provider ,password(Optional)
+- Input: email, password, device_info(Optional)
 - Output: 
     - Send OTP message(provider:EMAIL)
     - OR access_token + refresh_token(3rd party provider only)
 - Error: email does not exists, otp invalid
 ### Server Logic
 1. Verify credentials
-2. Look up for provider
-    - If provider = Email -> send OTP to client't email -> client verify OTP on /auth/verify route
+2. Check If email exists
+    - it not -> AuthError("Email doesn't exists")
+3. send OTP to client't email -> client verify OTP on /auth/email/verify route
     - Provider is 3rd party -> authentication succesfull
 4. Generate access token and refresh token 
 5. Store it in users header or cookie
 
+## POST /api/v1/auth/oauth/google
+1. Provider is 3rd party(i.e. Google, Github) -> authentication succesful
+2. generate access + refresh tokens
+3. Upadate db with email, provider, is_verified:true, hashed_refresh_tokens, etc .
+4. Store access + refresh token in headers or cookie.
+## POST /api/v1/auth/oauth/github
 
 # Verify
 ## POST /api/v1/auth/verify
