@@ -9,9 +9,10 @@ class AppError(Exception):
     log_level: int
     expose: bool
 
-    def __init__(self, message: str = "", code: str = ""):
+    def __init__(self, message: str = "", code: str = "", status_code : int | None = None):
         self.message = message
         self.code = code or self.code
+        self.status_code = status_code or self.status_code
         super().__init__(message)
 
     

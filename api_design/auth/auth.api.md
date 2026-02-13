@@ -31,10 +31,11 @@
 1. Verify credentials
 2. Check If email exists
     - it not -> AuthError("Email doesn't exists")
-3. send OTP to client't email -> client verify OTP on /auth/email/verify route
-    - Provider is 3rd party -> authentication succesfull
-4. Generate access token and refresh token 
-5. Store it in users header or cookie
+3. Generate OTP
+    - Store temporary record in redis to remember state 
+        - (verification_id, email, username, password_hash, otp_hash, issued_at ,expired_at, attempts)
+    - return response with verification_id and message : "OTP sent successfully"
+    - Now, it's frontend responsiblity to redirect client to this route: POST /api/v1/auth/email/verify
 
 ## POST /api/v1/auth/oauth/google
 1. Provider is 3rd party(i.e. Google, Github) -> authentication succesful

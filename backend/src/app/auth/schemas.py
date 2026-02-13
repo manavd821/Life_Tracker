@@ -9,17 +9,18 @@ class DeviceInfo(BaseModel):
     os_version : Optional[str] = None
     browser: Optional[str] = None
     browser_version: Optional[str] = None
-    app_version: Optional[str] = None #  if mobile / desktop app
-   
-# - Input: email, username ,provider, password(Optional), device_info(Optional)
-class AuthSignUpInitRequest(BaseModel):
+    app_version: Optional[str] = None #  if mobile / desktop app  
+    
+class AuthEmailSignUpInitRequest(BaseModel):
     email : EmailStr
     username : str
-    provider : AuthProvider
-    password : str = ""
+    password : str
     device_info : Optional[DeviceInfo] = None
 
-class AuthSignUpInitResponse(BaseModel):
+class AuthEmailInitResponse(BaseModel):
     message : str
-    verification_id : Optional[str] = None
+    verification_id : str
     
+class AuthEmailSignInInitRequest(BaseModel):
+    email : EmailStr
+    password : str
