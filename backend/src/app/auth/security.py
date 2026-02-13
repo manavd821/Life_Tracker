@@ -1,28 +1,48 @@
-from datetime import timedelta, datetime, timezone
-from passlib.context import LazyCryptContext
-import secrets
-import jwt
 import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+
+import jwt
+from passlib.context import LazyCryptContext
+from passlib.exc import UnknownHashError, InvalidHashError
+
+from app.core.exceptions import AuthError, ServerError
 from app.main import settings
-from app.core.exceptions import AuthError
 
 _pwd_ctx = LazyCryptContext(
     schemes=["argon2"],
     deprecated="auto",
 )
-
 #  <---------- Password hashing(Argon2) ---------->
-def hash_passoword(password : str) -> str:
+def hash_password(password : str) -> str:
     """
     hash plain password with argon2 hashing alogorthm
     """
     return _pwd_ctx.hash(password)
 
-def verify_password(password : str, password_hash : str) -> bool:
+def verify_password(password : str, password_hash : str) -> tuple[bool, str | None]:
     """
     Verify a password against argon2 hash
     """
-    return _pwd_ctx.verify(password, password_hash)
+    try:
+        valid =  _pwd_ctx.verify(password, password_hash)
+        
+        if valid and _pwd_ctx.needs_update(password_hash):
+            new_hash = _pwd_ctx.hash(password)
+            return True, new_hash
+        
+        return valid, None
+    
+    except InvalidHashError:
+        return False, None
+    
+    except UnknownHashError:
+        raise ServerError(
+            message="Convert password_hash with argon2 properly",
+            code="UNKNOWN_HASH_ERROR",
+        )
+    except Exception as e:
+        raise Exception(str(e))
 
 #  <---------- Refresh token ---------->
 def generate_refresh_token() -> str:
