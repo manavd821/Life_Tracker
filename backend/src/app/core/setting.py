@@ -46,3 +46,5 @@ def load_settings() -> Setting:
         jwt_secret_key = jwt_secret_key,
         access_token_expires_minutes=access_token_expires_minutes,
     )
+    
+settings = load_settings()

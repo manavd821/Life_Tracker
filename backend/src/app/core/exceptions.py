@@ -9,8 +9,9 @@ class AppError(Exception):
     log_level: int
     expose: bool
 
-    def __init__(self, message: str):
+    def __init__(self, message: str = "", code: str = ""):
         self.message = message
+        self.code = code or self.code
         super().__init__(message)
 
     
@@ -18,6 +19,7 @@ class ClientError(AppError):
     status_code = 400
     log_level = logging.INFO
     expose = True
+    code = "CLIENT_ERROR"
    
 class DomainError(AppError):
     """
@@ -27,8 +29,16 @@ class DomainError(AppError):
     status_code = 400
     log_level = logging.INFO
     expose = True
+    code="DOMAIN_ERROR"
      
 class ServerError(AppError):
     status_code = 500
     log_level = logging.ERROR
     expose = False
+    code = "SERVER_ERROR"
+    
+class AuthError(AppError):
+    status_code = 401
+    log_level = logging.INFO
+    expose = True
+    code = "AUTH_ERROR"

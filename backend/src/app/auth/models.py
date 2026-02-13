@@ -1,3 +1,4 @@
+from typing import List
 from app.db.base import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import DateTime, ForeignKey, Enum, false, func, UniqueConstraint
@@ -5,6 +6,10 @@ from sqlalchemy.dialects.postgresql import UUID
 from app.core.enums import AuthProvider
 import uuid
 import datetime 
+
+## User
+# - user_id(PK, Text, default uid)
+# - username(TEXT, not null)
 
 ## AuthIdentity
 # - auth_id(PK, Text, default uid)
@@ -16,6 +21,22 @@ import datetime
 # - created_at(not null)
 # UNIQUE(provider, email)
 
+class User(Base):
+    
+    __tablename__ = "users"
+    
+    user_id : Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True, 
+        default=uuid.uuid4,
+    )
+    username : Mapped[str] = mapped_column(nullable=False)
+    
+    auth_identities : Mapped[List["AuthIdentity"]] = relationship(
+        back_populates="user", 
+        cascade="all, delete-orphan",
+    )
+    
 class AuthIdentity(Base):
     __tablename__ = "auth_identity"
     __table_args__ = (
@@ -27,7 +48,7 @@ class AuthIdentity(Base):
         primary_key=True, 
         default=uuid.uuid4,
     )
-    user_id : Mapped[UUID] = mapped_column(
+    user_id : Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.user_id"), 
         nullable=False,
     )

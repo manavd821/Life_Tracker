@@ -1,8 +1,7 @@
-from pathlib import Path
 from typing import Annotated
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from fastapi import Depends
-from app.main import settings
+from app.core.setting import settings
 
 database = settings.database
 
@@ -16,8 +15,10 @@ DB_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HO
 
 engine = create_async_engine(DB_URL, echo = True)
 
+async_session = async_sessionmaker(engine, expire_on_commit=False)
+
 async def get_db_session():
-    async with engine.connect() as session:
+    async with async_session() as session:
         yield session
 
-DbSession = Annotated[AsyncConnection, Depends(get_db_session)]
+DbSession = Annotated[AsyncSession, Depends(get_db_session)]

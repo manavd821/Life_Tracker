@@ -1,10 +1,9 @@
+from app.core.setting import settings
 from fastapi import FastAPI
-from app.core.setting import load_settings
 from app.core.logging import setup_logging
 import logging
 
 # load all envs and secrets
-settings = load_settings()
 setup_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 logger.info("Applicaton starting", extra={"env" : settings.app_env})
