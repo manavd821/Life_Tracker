@@ -1,3 +1,4 @@
+from tkinter import CASCADE
 from typing import List
 from app.db.base import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -37,6 +38,11 @@ class User(Base):
         cascade="all, delete-orphan",
     )
     
+    refresh_tokens : Mapped[List["RefreshToken"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    
 class AuthIdentity(Base):
     __tablename__ = "auth_identity"
     __table_args__ = (
@@ -49,7 +55,7 @@ class AuthIdentity(Base):
         default=uuid.uuid4,
     )
     user_id : Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.user_id"), 
+        ForeignKey("users.user_id", ondelete="CASCADE"), 
         nullable=False,
     )
     provider : Mapped[AuthProvider] = mapped_column(
@@ -74,3 +80,59 @@ class AuthIdentity(Base):
     )
     
     user : Mapped["User"] = relationship(back_populates="auth_identities")
+  
+  ## RefreshToken
+
+# - token_id(PK, Text, default uid)
+# - user_id(FK->User.user_id)
+# - hashed_refresh_token(Text, unique ,not null)
+# - session_id(not null)
+# - created_at(not null)
+# - expires_at(not null)
+# - rotated_at(nullable)
+# - revoked_at(nullable)
+# - ip_address (nullable)
+# - user_agent (nullable)
+  
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        UniqueConstraint("user_id", "session_id", name="refresh_tokens_unique_constraint"),
+    )
+    
+    token_id : Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    user_id : Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    hashed_refresh_token : Mapped[str] = mapped_column(
+        nullable=False,
+        unique=True,
+    )
+    session_id : Mapped[str] = mapped_column(nullable=False)
+    created_at : Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    expires_at : Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    rotated_at : Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    revoked_at : Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    ip_address : Mapped[str] = mapped_column(nullable=True)
+    user_agent : Mapped[str] = mapped_column(nullable=True)
+    
+    user : Mapped["User"] = relationship(back_populates="refresh_tokens")
