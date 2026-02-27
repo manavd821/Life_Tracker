@@ -50,6 +50,32 @@ services:
         restart: true
     restart: unless-stopped
 
+  redis:
+    image: redis:8.6-alpine
+    container_name: redis_container
+    # ports are exposed only for development
+    ports:
+      - 6379:6379
+    networks:
+      - life-tracker-dev-network
+    volumes:
+      - ./redis_data:/data
+    secrets:
+      - REDIS_PASSWORD
+    command: >
+      sh -c "
+      redis-server
+      --requirepass \"$(cat /run/secrets/REDIS_PASSWORD)\"
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $(cat /run/secrets/REDIS_PASSWORD) ping | grep PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 # backend
   fastapi:
     build:
@@ -70,8 +96,13 @@ services:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
       - JWT_SECRET_KEY
+      - REDIS_PASSWORD
     depends_on:
       postgresql:
+        condition: service_healthy
+        required: true
+        restart: true
+      redis:
         condition: service_healthy
         required: true
         restart: true
@@ -94,3 +125,5 @@ secrets:
     environment: PGADMIN_DEFAULT_PASSWORD
   JWT_SECRET_KEY:
     environment: JWT_SECRET_KEY
+  REDIS_PASSWORD:
+    environment: REDIS_PASSWORD
