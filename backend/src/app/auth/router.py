@@ -1,30 +1,36 @@
-from typing import Annotated
 from fastapi import (
     APIRouter, 
-    Path, 
+    Request,
+    Response, 
+    status,
 )
-from fastapi.responses import JSONResponse
 from app.auth.schemas import (
     AuthEmailSignUpInitRequest, 
     AuthEmailInitResponse,
     AuthEmailSignInInitRequest,
+    RedisSignUpData,
+)
+from app.auth.service import (
+    create_user_with_email_identity, 
 )
 from app.auth.utils import (
+    extract_refresh_token,
+    fetch_and_verify_pending_user_from_redis,
+    set_access_and_refresh_token_in_cookie,
+    set_new_refresh_token_with_rotation,
+    signout_user,
+    store_data_in_redis_signin,
+    store_data_in_redis_signup,
     verify_credentinal_for_email_signup,
     verify_credentinal_for_email_signin,
+    authenticate_refresh_token,
 )
 from app.auth.security import (
-    generate_access_token, 
     generate_numeric_otp, 
     hash_password,
 )
-from app.core.exceptions import DomainError
 from app.db.config import DbSession
-
-from app.auth.service import (
-    create_user_with_email_identity,
-    get_user_by_email,
-)
+from app.auth.dependencies import redis_client
 
 router = APIRouter()
 ### Server Logic
@@ -47,111 +53,207 @@ router = APIRouter()
 #   "type": "access"
 # }
 
-@router.get('/set_in_cookie_test')
-async def generate_access():
-    token = generate_access_token("manav123", "s1")
-    res = JSONResponse(
-        content={
-            "msg" : "successful", 
-            "token" : token,
-        }
-    )
-    res.set_cookie("access_token", token, max_age=20, httponly=True, samesite="lax", secure=True)
-    return res
-
-@router.get('/set_in_header_test')
-async def generate_access_header():
-    token = generate_access_token("manav123", "s1")
-    res = JSONResponse(
-        content={
-            "msg" : "successful", 
-            "token" : token,
-        }
-    )
-    res.headers.append("Authorization", f"Bearer {token}")
-    return res
-
-@router.post('/create_user_test')
-async def create_user_test(session : DbSession, user_data : AuthEmailSignUpInitRequest):
-    await verify_credentinal_for_email_signup(session,user_data)
-    
-    # hash the password
-    password_hash = hash_password(user_data.password)
-    
-    user, auth = await create_user_with_email_identity(
-        session, 
-        username=user_data.username,
-        email=user_data.email,
-        password_hash=password_hash,
-        )
-    
-    return {
-        "msg" : "User creation successful",
-        "user_id" : user.user_id,
-        "username" : user.username,
-        "provider" : auth.provider,
-        "email" : auth.email,
-        "password_hash" : auth.password_hash,
-        "is_verified" : auth.is_verified,
-        "created_at" : auth.created_at,
-    }
-    
-@router.get('/user_test/{email:str}')
-async def get_user(session : DbSession, email : Annotated[str, Path()]):
-    result = await get_user_by_email(session=session, email=email)
-    
-    password_hash = result.password_hash if result else ""
-    print(password_hash)
-    return {
-        'result' :  result,
-    }
     
 @router.post('/email/signup', response_model=AuthEmailInitResponse)
-async def email_signup(session : DbSession, user_data : AuthEmailSignUpInitRequest):
+async def email_signup(
+    session : DbSession, 
+    user_data : AuthEmailSignUpInitRequest,
+    redis_client : redis_client,
+    ):
     
     # check is email exists or not
     await verify_credentinal_for_email_signup(session,user_data)
     
     # hash the password
     password_hash = hash_password(user_data.password)
-    print(f"{password_hash=}")
     
     # generate otp
     otp = generate_numeric_otp()
-    print(f"{otp=}")
+    
     # send otp to user's email
     
     # Store temporary record in redis to remember state 
     # - (verification_id, email, username, password_hash, otp_hash, issued_at ,expired_at, attempts)
+    verification_id = await store_data_in_redis_signup(
+        redis_client=redis_client,
+        email=user_data.email,
+        password_hash=password_hash,
+        otp=otp,
+        username=user_data.username,
+    )
     
     return {
-        "message" : "OTP sent Successfully",
-        "verification_id" : str(otp),
+        "message" : str(otp),
+        "verification_id" : verification_id,
     }
 
 @router.post('/email/signin', response_model=AuthEmailInitResponse)
-async def email_signin(session : DbSession, user_data : AuthEmailSignInInitRequest):
+async def email_signin(
+    session : DbSession, 
+    user_data : AuthEmailSignInInitRequest,
+    redis_client : redis_client,
+    ):
     
     # Verify credentials
-    await verify_credentinal_for_email_signin(session, user_data)
+    db_user = await verify_credentinal_for_email_signin(session, user_data)
     
     # generate otp
     otp = generate_numeric_otp()
-    print(f"{otp=}")
     
     # Store temporary record in redis to remember state 
-    # - (verification_id, email, username, password_hash, otp_hash, issued_at ,expired_at, attempts)
-    
+    # - (verification_id, user_id, otp_hash, issued_at ,expired_at, attempts)
+    verification_id = await store_data_in_redis_signin(
+        redis_client,
+        str(db_user.user_id), # type: ignore
+        # str("user_id123456789"),
+        otp,
+    )
     return {
-        "message" : "OTP sent Successfully",
-        "verification_id" : "vid12345"
+        "message" : str(otp),
+        "verification_id" : verification_id
     }
     
 
-@router.post('/verify')
-async def verify_otp():
-    # Fetch PendingAuthVerification by verification_id.
+@router.post('/email/verify')
+async def verify_otp(
+    request : Request,
+    user_otp : str,
+    verification_id : str,
+    session : DbSession, 
+    redis_client : redis_client,
+    ):
+    # 1. Fetch PendingAuthVerification by verification_id.
+    # 2. If not found → Invalid or expired request.
+    # 3. Check expiration.
+    # 4. Compare hashed OTP.
+    # 5. If mismatch:
+    #     - increment attempts
+    #     - if attempts exceed threshold → delete record
+    #     - return error
+    user_data = await fetch_and_verify_pending_user_from_redis(
+        redis_client,
+        verification_id,
+        user_otp
+    )
+    new_refresh_token = new_access_token = None
+    user_id = None
+    # 6. If valid:
+    if "signup_verification_id" in user_data: #sigup flow
+        # - Create User
+        # - Create AuthIdentity (provider=EMAIL, is_verified=True)
+        # get user_id
+        data = RedisSignUpData(**user_data)
+        user, _ = await create_user_with_email_identity(
+            session=session,
+            username=data.username,
+            email=data.email,
+            password_hash=data.password_hash
+        )
+        user_id = user.user_id
+        
+    else: # signin 
+        # just get user_id because we need it in token generation
+        user_id = user_data["user_id"]
+    # generate access token
+    # generate refresh token and insert  and refresh token in db
+    user_agent = request.headers.get("User-Agent") or ""
+    new_refresh_token, new_access_token = await set_new_refresh_token_with_rotation(
+        session=session,
+        user_id=user_id, # type: ignore
+        user_agent = user_agent,
+        rotate=False,
+    )
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    # Issue session token (cookie)
+    if new_refresh_token and new_access_token:
+        await set_access_and_refresh_token_in_cookie(
+            response=response,
+            access_token=new_access_token,
+            refresh_token=new_refresh_token,
+        )
+# 7. Return success response with token.
+
+    return response
     
-    return {
-        "msg" : "otp sent successfully",
-    }
+@router.post('/refresh')
+async def rotate_refresh_token(session : DbSession, request : Request):
+    # extract refresh token
+    refresh_token = await extract_refresh_token(request)
+    
+    db_refresh_token = await authenticate_refresh_token(session, refresh_token) # type: ignore
+    
+    new_refresh_token, new_access_token = await set_new_refresh_token_with_rotation(
+        session=session,
+        user_id=db_refresh_token.user_id, # type: ignore
+        session_id=db_refresh_token.session_id, # type: ignore
+        user_agent=db_refresh_token.user_agent, # type: ignore
+        db_refresh_token=db_refresh_token,
+        rotate=True,
+    )
+
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    # 5. store access_token and new_refresh_token in client's header/cookie and return it.
+    if new_refresh_token and new_access_token:
+        await set_access_and_refresh_token_in_cookie(
+            response=response,
+            access_token=new_access_token,
+            refresh_token=new_refresh_token,
+        )
+ 
+    return response
+
+@router.post('/signout')
+async def signout(session : DbSession, request : Request):
+    # 1. Extract refresh_token
+    refresh_token = await extract_refresh_token(request, not_found_ok=True)
+    access_token = request.cookies.get("access_token")
+    
+    if refresh_token :  
+        await signout_user(session, refresh_token)
+        
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    cookie_payload = {
+            "httponly": True,
+            "samesite": "lax",
+            "secure" : True,
+        }
+    response.delete_cookie(
+        "access_token", 
+        path='/',
+        **cookie_payload
+        ) if access_token else None
+    response.delete_cookie(
+        "refresh_token", 
+        path='/',
+        **cookie_payload,
+        ) if refresh_token else None
+        
+    return response
+
+@router.post('/signout-all')
+async def signout_all(session : DbSession, request : Request):
+    refresh_token = await extract_refresh_token(request, not_found_ok=True)
+    access_token = request.cookies.get("access_token")
+    
+    if refresh_token:
+        await signout_user(session, refresh_token, all_session=True)
+    
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    
+    cookie_payload = {
+            "httponly": True,
+            "samesite": "lax",
+            "secure" : True,
+        }
+    response.delete_cookie(
+        "access_token", 
+        path='/',
+        **cookie_payload
+        ) if access_token else None
+    response.delete_cookie(
+        "refresh_token", 
+        path='/',
+        **cookie_payload,
+        ) if refresh_token else None
+        
+    return response

@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
+import uuid
 
 import jwt
 from passlib.context import LazyCryptContext
@@ -58,7 +59,7 @@ def hash_refresh_token(token : str) -> str:
 
 #  <---------- Access token(JWT)(HMAC) ---------->
 def generate_access_token(
-    user_id : str,
+    user_id : str | uuid.UUID,
     session_id : str,
     role : str = "USER",
     expire_delta : timedelta | None = None
@@ -69,7 +70,7 @@ def generate_access_token(
         expire_delta = timedelta(minutes=settings.access_token_expires_minutes)
     
     payload = {
-        "sub" : user_id,
+        "sub" : str(user_id),
         "session_id" : session_id,
         "role" : role,
         "iat" : now,
@@ -99,7 +100,7 @@ def decode_access_token(token : str) -> dict:
         raise AuthError("Invalid token", code="INVALID_ACCESS_TOKEN")
     
 #  <---------- OTP Generation ---------->
-def generate_numeric_otp(length = 6):
+def generate_numeric_otp(length = 6) -> int:
     """
     returns 6 digit number
     """

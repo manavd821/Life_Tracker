@@ -18,3 +18,4 @@ class ENV(str, enum.Enum):
     DEVELOPMENT = "DEVELOPMENT"
     TESTING = "TESTING"
     
+MAX_OTP_ATTEMPTS = 5

@@ -24,3 +24,21 @@ class AuthEmailInitResponse(BaseModel):
 class AuthEmailSignInInitRequest(BaseModel):
     email : EmailStr
     password : str
+
+class RedisSignInData(BaseModel):
+    signin_verification_id : str
+    user_id : str
+    otp_hash : str
+    issued_at : str
+    expired_at : str
+    attempts : int
+
+class RedisSignUpData(BaseModel):
+    signup_verification_id : str
+    otp_hash : str
+    username : str
+    email : str
+    password_hash : str
+    issued_at : str
+    expired_at : str
+    attempts : int
