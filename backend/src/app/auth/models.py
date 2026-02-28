@@ -97,7 +97,6 @@ class AuthIdentity(Base):
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
     __table_args__ = (
-        UniqueConstraint("user_id", "session_id", name="refresh_tokens_unique_constraint"),
     )
     
     token_id : Mapped[uuid.UUID] = mapped_column(
