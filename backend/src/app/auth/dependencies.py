@@ -2,6 +2,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from app.auth.security import decode_access_token
 from app.core.exceptions import AuthError
+from redis.asyncio import Redis
 
 async def get_current_user(request : Request):
     token = request.cookies.get("access_token")
@@ -11,7 +12,7 @@ async def get_current_user(request : Request):
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
         else:
-            raise AuthError("Token required", code="MISSING_ACCESS_TOKEN")
+            raise AuthError("Access token required", code="MISSING_ACCESS_TOKEN")
     
     payload = decode_access_token(token)
     
@@ -29,4 +30,8 @@ async def get_current_user(request : Request):
     
     return user_id
 
+async def get_redis_client(request : Request):
+    return request.app.state.redis
+
 current_user = Annotated[dict, Depends(get_current_user)]
+redis_client = Annotated[Redis, Depends(get_redis_client)]
