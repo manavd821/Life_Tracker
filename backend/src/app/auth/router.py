@@ -4,6 +4,7 @@ from fastapi import (
     Response, 
     status,
 )
+from fastapi.responses import JSONResponse
 from app.auth.schemas import (
     AuthEmailSignUpInitRequest, 
     AuthEmailInitResponse,
@@ -16,6 +17,7 @@ from app.auth.service import (
 from app.auth.utils import (
     extract_refresh_token,
     fetch_and_verify_pending_user_from_redis,
+    resend_otp_using_redis,
     set_access_and_refresh_token_in_cookie,
     set_new_refresh_token_with_rotation,
     signout_user,
@@ -174,6 +176,22 @@ async def verify_otp(
 # 7. Return success response with token.
 
     return response
+
+@router.post('/resend-otp')
+async def resend_otp(redis_client : redis_client, verification_id : str):
+    # set up new otp in redis
+    new_otp = await resend_otp_using_redis(redis_client, verification_id)
+    
+    # send new otp to the client's email
+    print(new_otp)
+    response = JSONResponse(
+        content={
+            "new_otp" : new_otp, 
+        },
+        # status_code=status.HTTP_204_NO_CONTENT
+        )
+    return response
+    
     
 @router.post('/refresh')
 async def rotate_refresh_token(session : DbSession, request : Request):

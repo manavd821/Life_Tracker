@@ -47,7 +47,7 @@
 # Verify
 ## POST /api/v1/auth/verify
 - Intent: verify the email if provider is EMAIL, create user and issue token
-- input: verification_id, OTP(from cookie)
+- input: verification_id, OTP
 - Output: access_token, refresh_token
 - Error: Invalid or Expired OTP
 ### Server Logic
@@ -66,6 +66,30 @@
     - Issue session token (JWT or session cookie)
 7. Return success response with token.
 
+
+## POST /api/v1/auth/resend-otp
+- Intent: regenerate OTP for an existing verification session
+- input: verification_id
+- Output: generate the otp successfully
+- Error: Invalid verification_id, Too many resend requests within 30 seconds, too many attempts
+### Server Logic
+1. fetch data from redis by verification_id
+ - if not exists, expired -> again signup/signin
+2. Rate limit otp and max 3 resends in total
+ - take:
+    cooldown_key = verification_id:resend_cd
+    count_key = verification_id:resend_count
+ - if cooldown_key exists:
+    raise error with msg = "Wait 30 seconds"
+ - increment count_key by 1(if does not exist, create with value 1 and attach expire time 15 minutes)
+ - if count_key > 3
+    raise error with msg = "To many attempts"
+3. generate otp
+4. store it in redis:
+ - create otp_hash
+ - change otp_hash, reset attempts to zero and reset expire time
+5. create cooldown key with 30 second expiry
+6. send new otp to the client's email
 
 # refresh token
 ## POST /api/v1/auth/refresh
