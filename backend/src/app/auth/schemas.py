@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from app.core.enums import AuthProvider
 
 class DeviceInfo(BaseModel):
@@ -25,9 +25,14 @@ class AuthEmailSignInInitRequest(BaseModel):
     email : EmailStr
     password : str
 
+class VerifyOTPRequest(BaseModel):
+    verification_id: str
+    user_otp: int =  Field(ge=100000, le=999999)
+    
 class RedisSignInData(BaseModel):
     signin_verification_id : str
     user_id : str
+    email : str
     otp_hash : str
     attempts : int
 

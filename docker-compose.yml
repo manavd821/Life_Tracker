@@ -97,6 +97,8 @@ services:
       - POSTGRES_PASSWORD
       - JWT_SECRET_KEY
       - REDIS_PASSWORD
+      - SENDGRID_API_KEY
+      - SENDGRID_SENDER_EMAIL
     depends_on:
       postgresql:
         condition: service_healthy
@@ -127,3 +129,7 @@ secrets:
     environment: JWT_SECRET_KEY
   REDIS_PASSWORD:
     environment: REDIS_PASSWORD
+  SENDGRID_API_KEY:
+    environment: SENDGRID_API_KEY
+  SENDGRID_SENDER_EMAIL:
+    environment: SENDGRID_SENDER_EMAIL

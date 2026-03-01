@@ -13,7 +13,8 @@
 4. check if email already exists or not
     - DB select query with provided email
     - if response is not None -> raise AuthError("Email already exists")
-5. Generate OTP
+5. rate limit and max 5 otp within 15 minutes
+6. Generate OTP
     - Store temporary record in redis to remember state 
         - (verification_id, email, username, password_hash, otp_hash, issued_at ,expired_at, attempts)
     - return response with verification_id and message : "OTP sent successfully"
@@ -31,7 +32,8 @@
 1. Verify credentials
 2. Check If email exists
     - it not -> AuthError("Email doesn't exists")
-3. Generate OTP
+3. rate limit and max 5 otp within 15 minutes
+4. Generate OTP
     - Store temporary record in redis to remember state 
         - (verification_id, email, username, password_hash, otp_hash, issued_at ,expired_at, attempts)
     - return response with verification_id and message : "OTP sent successfully"

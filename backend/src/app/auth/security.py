@@ -8,7 +8,7 @@ from passlib.context import LazyCryptContext
 from passlib.exc import UnknownHashError, InvalidHashError
 
 from app.core.exceptions import AuthError, ServerError
-from app.main import settings
+from app.core.setting import settings
 
 _pwd_ctx = LazyCryptContext(
     schemes=["argon2"],

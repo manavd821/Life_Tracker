@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+import httpx
 from app.core.middleware import logging_middleware
 from app.core.exceptions import AppError
 from app.core.exception_handler import (
@@ -25,7 +26,11 @@ def register_exception_handlers(app : FastAPI):
 @asynccontextmanager
 async def app_lifespan(app : FastAPI):
     # before startup
+    # create redis client and store it in app state
     app.state.redis = create_redis()
+    # storehttpx client in app state
+    app.state.httpx_client = httpx.AsyncClient(timeout=10)
+     
     logger.log(
         level=logging.INFO,
         msg="Redis client has been initialized successfully",
@@ -33,6 +38,7 @@ async def app_lifespan(app : FastAPI):
     yield
     # Shutdown
     await app.state.redis.aclose()
+    await app.state.httpx_client.aclose()
     logger.log(
         level=logging.INFO,
         msg="Redis client has been shutdown successfully",

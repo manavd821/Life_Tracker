@@ -19,3 +19,6 @@ class ENV(str, enum.Enum):
     TESTING = "TESTING"
     
 MAX_OTP_ATTEMPTS = 5
+OTP_EXPIRE_TIME_REDIS_SECONDS = 5 * 60
+SENDGRID_URL = "https://api.sendgrid.com/v3/mail/send"
+OTP_COOLDOWN_TIME_SECONDS = 60

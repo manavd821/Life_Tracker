@@ -1,15 +1,15 @@
 from fastapi import (
-    APIRouter, 
+    APIRouter,
     Request,
     Response, 
     status,
 )
-from fastapi.responses import JSONResponse
 from app.auth.schemas import (
     AuthEmailSignUpInitRequest, 
     AuthEmailInitResponse,
     AuthEmailSignInInitRequest,
     RedisSignUpData,
+    VerifyOTPRequest,
 )
 from app.auth.service import (
     create_user_with_email_identity, 
@@ -18,6 +18,7 @@ from app.auth.utils import (
     extract_refresh_token,
     fetch_and_verify_pending_user_from_redis,
     resend_otp_using_redis,
+    send_otp_to_user,
     set_access_and_refresh_token_in_cookie,
     set_new_refresh_token_with_rotation,
     signout_user,
@@ -32,7 +33,10 @@ from app.auth.security import (
     hash_password,
 )
 from app.db.config import DbSession
-from app.auth.dependencies import redis_client
+from app.auth.dependencies import (
+    redis_client,
+    httpx_client,
+)
 
 router = APIRouter()
 ### Server Logic
@@ -61,6 +65,7 @@ async def email_signup(
     session : DbSession, 
     user_data : AuthEmailSignUpInitRequest,
     redis_client : redis_client,
+    httpx_client : httpx_client,
     ):
     
     # check is email exists or not
@@ -73,6 +78,7 @@ async def email_signup(
     otp = generate_numeric_otp()
     
     # send otp to user's email
+    await send_otp_to_user(str(otp), httpx_client, user_data.email)
     
     # Store temporary record in redis to remember state 
     # - (verification_id, email, username, password_hash, otp_hash, issued_at ,expired_at, attempts)
@@ -85,7 +91,7 @@ async def email_signup(
     )
     
     return {
-        "message" : str(otp),
+        "message" : "OTP sent successfully! Please check your email",
         "verification_id" : verification_id,
     }
 
@@ -94,6 +100,7 @@ async def email_signin(
     session : DbSession, 
     user_data : AuthEmailSignInInitRequest,
     redis_client : redis_client,
+    httpx_client : httpx_client,
     ):
     
     # Verify credentials
@@ -105,24 +112,26 @@ async def email_signin(
     # Store temporary record in redis to remember state 
     # - (verification_id, user_id, otp_hash, issued_at ,expired_at, attempts)
     verification_id = await store_data_in_redis_signin(
-        redis_client,
-        str(db_user.user_id), # type: ignore
+        redis_client=redis_client,
+        user_id= str(db_user.user_id), # type: ignore
         # str("user_id123456789"),
-        otp,
+        otp=otp,
+        email=user_data.email,
     )
-    return {
-        "message" : str(otp),
-        "verification_id" : verification_id
-    }
+    # send email to client
+    await send_otp_to_user(str(otp), httpx_client, user_data.email)
     
+    return {
+        "message" : "OTP sent successfully! Please check your email",
+        "verification_id" : verification_id
+    }  
 
 @router.post('/email/verify')
 async def verify_otp(
     request : Request,
-    user_otp : str,
-    verification_id : str,
     session : DbSession, 
     redis_client : redis_client,
+    payload: VerifyOTPRequest,
     ):
     # 1. Fetch PendingAuthVerification by verification_id.
     # 2. If not found → Invalid or expired request.
@@ -134,8 +143,8 @@ async def verify_otp(
     #     - return error
     user_data = await fetch_and_verify_pending_user_from_redis(
         redis_client,
-        verification_id,
-        user_otp
+        payload.verification_id,
+        str(payload.user_otp),
     )
     new_refresh_token = new_access_token = None
     user_id = None
@@ -173,26 +182,24 @@ async def verify_otp(
             access_token=new_access_token,
             refresh_token=new_refresh_token,
         )
-# 7. Return success response with token.
-
+    # 7. Return success response with token.
     return response
 
 @router.post('/resend-otp')
-async def resend_otp(redis_client : redis_client, verification_id : str):
+async def resend_otp(
+    redis_client : redis_client, 
+    httpx_client : httpx_client, 
+    verification_id : str
+    ):
     # set up new otp in redis
-    new_otp = await resend_otp_using_redis(redis_client, verification_id)
+    new_otp, user_email = await resend_otp_using_redis(redis_client, verification_id)
     
     # send new otp to the client's email
+    await send_otp_to_user(str(new_otp), httpx_client, user_email)
     print(new_otp)
-    response = JSONResponse(
-        content={
-            "new_otp" : new_otp, 
-        },
-        # status_code=status.HTTP_204_NO_CONTENT
-        )
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
     return response
-    
-    
+     
 @router.post('/refresh')
 async def rotate_refresh_token(session : DbSession, request : Request):
     # extract refresh token

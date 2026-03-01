@@ -1,5 +1,6 @@
 from typing import Annotated
 from fastapi import Depends, Request
+from httpx import AsyncClient
 from app.auth.security import decode_access_token
 from app.core.exceptions import AuthError
 from redis.asyncio import Redis
@@ -33,5 +34,9 @@ async def get_current_user(request : Request):
 async def get_redis_client(request : Request):
     return request.app.state.redis
 
+async def get_httpx_client(request : Request):
+    return request.app.state.httpx_client
+
 current_user = Annotated[dict, Depends(get_current_user)]
 redis_client = Annotated[Redis, Depends(get_redis_client)]
+httpx_client = Annotated[AsyncClient, Depends(get_httpx_client)]

@@ -11,13 +11,18 @@ class DatabaseConfig:
     POSTGRES_USER : str
     POSTGRES_PORT : str = "5432"
     POSTGRES_HOST : str = "postgresql"
-
+@dataclass
+class SendGridConfig:
+    SENDGRID_API_KEY : str
+    SENDGRID_SENDER_EMAIL : str
+    
 @dataclass
 class Setting:
     app_env : ENV
     log_level : str
     database : DatabaseConfig
     REDIS_PASSWORD : str
+    SENDGRID : SendGridConfig
     jwt_secret_key : str
     access_token_expires_minutes : float
     refresh_token_expires_minutes : float
@@ -34,6 +39,10 @@ def load_settings() -> Setting:
         "POSTGRES_PASSWORD" : read_secret("POSTGRES_PASSWORD"),
         "POSTGRES_USER" : read_secret("POSTGRES_USER"),
     }
+    SENDGRID = SendGridConfig(
+        SENDGRID_API_KEY=read_secret("SENDGRID_API_KEY"),
+        SENDGRID_SENDER_EMAIL=read_secret("SENDGRID_SENDER_EMAIL"),
+    )
     
     raw_env = os.getenv("APP_ENV", ENV.PRODUCTION.value)
     try:
@@ -58,6 +67,7 @@ def load_settings() -> Setting:
         jwt_secret_key = jwt_secret_key,
         access_token_expires_minutes=access_token_expires_minutes,
         refresh_token_expires_minutes=refresh_token_expires_minutes,
+        SENDGRID=SENDGRID,
     )
     
 settings = load_settings()

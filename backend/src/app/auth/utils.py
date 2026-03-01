@@ -1,6 +1,3 @@
-import logging
-import uuid
-
 from fastapi import Request, Response, status
 from app.core.exceptions import AuthError, ClientError, DomainError, ServerError
 from app.core.setting import settings
@@ -27,11 +24,21 @@ from app.auth.security import (
     verify_password,
     hash_refresh_token,
 )
+from app.core.enums import (
+    ENV, 
+    MAX_OTP_ATTEMPTS, 
+    OTP_COOLDOWN_TIME_SECONDS, 
+    OTP_EXPIRE_TIME_REDIS_SECONDS, 
+    SENDGRID_URL,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
-from app.core.enums import ENV, MAX_OTP_ATTEMPTS
+from typing import Literal
+import httpx
 import datetime
+import logging
+import uuid
 
 # < ----------- Access and Refresh Token Utilities ----------->
 
@@ -197,7 +204,102 @@ async def set_access_and_refresh_token_in_cookie(
     )
    
 # < -------------Redis Utilities --------------->
+async def rate_limit_otp_redis(
+    redis_client : Redis,
+    email : str,
+    flow : Literal["signup", "signin", "resend"],
+):
+    try:
+        cooldown_key = f"auth:{flow}:otp:cooldown:{email}"
+        count_key = f"auth:{flow}:otp:attempts:{email}"
+        
+        # increment count_key by 1
+        count = await redis_client.incrby(count_key, 1)
+        # if does not exist, create with value 1 and attach expire time 15 minutes
+        if count == 1:
+            await redis_client.expire(
+                count_key,
+                time=15 * 60,
+            )
+        # if count_key > 5 within 15 minutes -> raise error with msg = "To many attempts"
+        if count > 5:
+            raise ClientError(
+                message="Too many attmepts within 15 minutes. Please try again after some time.",
+                code="TOO_MANY_ATTEMPTS",
+            )
+            
+        # if cooldown_key exists: -> too many requests within OTP_COOLDOWN_TIME_SECONDS
+        cooldown_set = await redis_client.set(
+            cooldown_key,
+            "1",
+            ex=OTP_COOLDOWN_TIME_SECONDS,
+            nx=True,
+        )
+        if not cooldown_set:
+            raise ClientError(
+                message=f"Too many request! Wait at least {OTP_COOLDOWN_TIME_SECONDS} seconds",
+                code = "TOO_MANY_REQUESTS",
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+    
+    except RedisError as e:
+        raise ServerError(str(e))
+    
+    except Exception:
+        raise
 
+async def get_redis_hash_data(
+    redis_client : Redis,
+    verification_id : str
+) -> dict:
+    try:
+        key_type = await redis_client.type(verification_id)
+        print(key_type)
+        # If data does not exists
+        if key_type == "none":
+            raise ClientError(
+                message="Verification expired! Please signin/signup again.",
+                code="VERIFICATION_EXPIRED",
+            )
+        if key_type != "hash":
+            raise ClientError(
+                "Invalid verification id",
+                "INVALID_VERIFICATION_ID"
+            )
+        return await redis_client.hgetall(verification_id) # type: ignore
+    
+    except RedisError as e:
+        raise ServerError(str(e))
+    
+    except Exception:
+        raise
+ 
+async def set_hash_with_verification_id_and_set_cooldown_key(
+    redis_client : Redis,
+    verification_id : str,
+    data : dict,
+    DATA_EXPIRE_TIME_REDIS_IN_SECOND : int = OTP_EXPIRE_TIME_REDIS_SECONDS
+) -> str:
+    try:
+        async with redis_client.pipeline(transaction=True) as pipe:
+            pipe.hset(
+                verification_id,
+                mapping=data,
+            ) # type: ignore
+            # auto delete/expire after 15 mins
+            pipe.expire(
+                verification_id,
+                DATA_EXPIRE_TIME_REDIS_IN_SECOND,
+            )
+            await pipe.execute()
+            return verification_id
+        
+    except RedisError as e:
+        raise ServerError(str(e))
+    
+    except Exception:
+        raise
+   
 async def store_data_in_redis_signup(
     redis_client : Redis, 
     email : str, 
@@ -210,74 +312,57 @@ async def store_data_in_redis_signup(
 
     """
     
-    signup_verification_id = "signup:" + generate_refresh_token()
+    signup_verification_id = "auth:otp:signup:" + generate_refresh_token()
     
     data = RedisSignUpData(
         signup_verification_id=signup_verification_id,
         otp_hash= hash_password(str(otp)),
         username=username,
-        email=email,
+        email=email.strip().lower(),
         password_hash=password_hash,
         attempts=0,
     )
-    try:
-        cooldown_key = f"{signup_verification_id}:resend_cd"
-        async with redis_client.pipeline(transaction=True) as pipe:
-            pipe.hset(
-                signup_verification_id,
-                mapping=data.model_dump(),
-            ) # type: ignore
-            # auto delete/expire after 15 mins
-            pipe.expire(
-                signup_verification_id,
-                datetime.timedelta(minutes=15),
-            )
-            await pipe.execute()
-            pipe.set(
-                cooldown_key, 
-                "1", 
-                ex=datetime.timedelta(seconds=30)
-            )
-            return signup_verification_id
-    except RedisError as e:
-        raise ServerError(str(e))
-
+    
+    await rate_limit_otp_redis(
+        redis_client=redis_client,
+        email=email,
+        flow="signup",
+    )
+    
+    await set_hash_with_verification_id_and_set_cooldown_key(
+        redis_client=redis_client,
+        verification_id=signup_verification_id,
+        data=data.model_dump(),
+    )
+    return signup_verification_id
+    
 async def store_data_in_redis_signin(
     redis_client : Redis,
     user_id : str,
     otp : int,
+    email : str,
 ) -> str:
     # - (verification_id, user_id, otp_hash, issued_at ,expired_at, attempts)
-    signin_verification_id = "signin:" + generate_refresh_token()
+    signin_verification_id = "auth:otp:signin:" + generate_refresh_token()
     data = RedisSignInData(
         signin_verification_id = signin_verification_id,
         user_id = user_id,
+        email=email.strip().lower(),
         otp_hash = hash_password(str(otp)),
         attempts = 0,    
     )
     
-    try:
-        cooldown_key = f"{signin_verification_id}:resend_cd"
-        async with redis_client.pipeline(transaction=True) as pipe:
-            pipe.hset(
-                signin_verification_id,
-                mapping=data.model_dump(),
-            ) # type: ignore
-            # auto delete/expire after 15 mins
-            pipe.expire(
-                signin_verification_id,
-                datetime.timedelta(minutes=15),
-            )
-            pipe.set(
-                cooldown_key, 
-                "1", 
-                ex=datetime.timedelta(seconds=30)
-            )
-            await pipe.execute()
-            return signin_verification_id
-        
-    except RedisError as e:
-        raise ServerError(str(e))
+    await rate_limit_otp_redis(
+        redis_client=redis_client,
+        email=email,
+        flow="signin",
+    )
+    await set_hash_with_verification_id_and_set_cooldown_key(
+        redis_client=redis_client,
+        verification_id=signin_verification_id,
+        data=data.model_dump(),
+    )
+    return signin_verification_id
 
 async def fetch_and_verify_pending_user_from_redis(
     redis_client : Redis,
@@ -294,23 +379,17 @@ async def fetch_and_verify_pending_user_from_redis(
         - if attempts exceed threshold → delete record
         - return error
     """
+    redis_data = await get_redis_hash_data(
+        redis_client=redis_client,
+        verification_id=verification_id,
+    )
     try:
-        key_type = await redis_client.type(verification_id)
-        # If data does not exists
-        if not key_type:
-            raise ClientError(
-                message="Verification expired! Please signin/signup again.",
-                code="VERIFICATION_EXPIRED",
-            )
-        if key_type != "hash":
-            raise ClientError(
-                "Invalid verification id",
-                "INVALID_VERIFICATION_ID"
-            )
-        redis_data = await redis_client.hgetall(verification_id) # type: ignore
-        
         # increment attempts
-        user_attempts = int(redis_data["attempts"]) + 1
+        user_attempts = await redis_client.hincrby(
+            verification_id,
+            "attempts",
+            1,
+        ) # type: ignore
         # if attempts exceed threshold → delete record
         if user_attempts > MAX_OTP_ATTEMPTS :
             await redis_client.delete(verification_id)
@@ -318,19 +397,6 @@ async def fetch_and_verify_pending_user_from_redis(
                 "Too many invalid verification attempts. Please restart the signup/signin process.",
                 "TOO_MANY_OTP_ATTMPTS",
                 400,
-            )
-        # update attempts
-        redis_data["attempts"] = user_attempts
-        await redis_client.hset(
-            verification_id, 
-            mapping={
-                "attempts" : user_attempts,
-            }) # type: ignore
-        # check if otp right or not
-        if len(user_otp) != 6:
-            raise ClientError(
-                "OTP must be of 6 digit",
-                "INVALID_OTP",
             )
         valid, new_hash = verify_password(user_otp, redis_data["otp_hash"])
         if not valid:
@@ -354,79 +420,93 @@ async def fetch_and_verify_pending_user_from_redis(
     except RedisError as e:
         raise ServerError(str(e))
     
+    except Exception:
+        raise
+    
 async def resend_otp_using_redis(
     redis_client : Redis,
     verification_id : str,
-) -> int :
+) -> tuple[int, str] :
+    redis_data = await get_redis_hash_data(
+        redis_client=redis_client,
+        verification_id=verification_id,
+    ) 
+    # Rate limit otp and max 3 resends in total
+    await rate_limit_otp_redis(
+        redis_client=redis_client,
+        email=redis_data["email"],
+        flow="resend",
+    )
+    # generate otp
+    new_otp = generate_numeric_otp()
+    # store it in redis:
+    # create otp_hash
+    new_otp_hash = hash_password(str(new_otp))
+    # change otp_hash, reset attempts to zero and reset expire time
+    data = {
+        "otp_hash" : new_otp_hash,
+        "attempts" : 0,
+    }
+    await set_hash_with_verification_id_and_set_cooldown_key(
+        redis_client=redis_client,
+        verification_id=verification_id,
+        data=data,
+        DATA_EXPIRE_TIME_REDIS_IN_SECOND=15 * 60
+    )  
+    return new_otp, redis_data["email"]
+        
+# < -------------SendGrid Utilities --------------->
+def create_payload_and_headers_for_sendgrid(
+    receiver_email : str, 
+    otp : str
+) -> tuple[dict, dict]:
+    payload = {
+        "personalizations" : [
+            {
+                "to" : [
+                    {
+                        "email" : receiver_email,
+                        "name": "Optional",
+                    },
+                    
+                ],
+            },
+        ],
+        "from" : {"email" : settings.SENDGRID.SENDGRID_SENDER_EMAIL},
+        "subject" : "OTP Verification",
+        "content" : [
+            {
+                "type" : "text/plain",
+                "value" : f"Your OTP is {otp}",
+            },
+        ],
+    }
+    headers = {
+        "Authorization" : f"Bearer {settings.SENDGRID.SENDGRID_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    return payload, headers
+
+async def send_otp_to_user(
+    otp : str,
+    httpx_client : httpx.AsyncClient,
+    receiver_email : str,
+):
+    
+    payload, headers = create_payload_and_headers_for_sendgrid(receiver_email, otp)
     try:
-        key_type = await redis_client.type(verification_id)
-        # if not exists, expired -> again signup/signin
-        if not key_type:
-            raise ClientError(
-                message="Verification expired! Please signin/signup again.",
-                code="VERIFICATION_EXPIRED",
+        response = await httpx_client.post(
+            url = SENDGRID_URL,
+            headers=headers,
+            json = payload,
+        )
+        print(response.status_code)
+        print(response.text)
+        if response.status_code != 202:
+            raise ServerError(
+                message="OTP email delivery failed",
+                code=  "OTP_EMAIL_DELIVERY_FAILED"
             )
-        if key_type != "hash":
-            raise ClientError(
-                "Invalid verification id",
-                "INVALID_VERIFICATION_ID"
-            )
-        # fetch data from redis by verification_id
-        redis_data = await redis_client.hgetall(verification_id) # type: ignore
-        
-        # Rate limit otp and max 3 resends in total
-        cooldown_key = f"{verification_id}:resend_cd"
-        count_key = f"{verification_id}:resend_count"
-        
-        # if cooldown_key exists: -> too many requests within 30s
-        if await redis_client.exists(cooldown_key):
-            raise ClientError(
-                message="Too many request! Wait at least 30 seconds",
-                code = "TOO_MANY_REQUESTS",
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
-        # increment count_key by 1
-        count = await redis_client.incrby(count_key, 1)
-        # if does not exist, create with value 1 and attach expire time 15 minutes
-        if count == 1:
-            await redis_client.expire(count_key, datetime.timedelta(minutes=15))
-        # if count_key > 3 -> raise error with msg = "To many attempts"
-        if count > 3:
-            raise ClientError(
-                message="Too many attmepts. Please create new verification session.",
-                code="TOO_MANY_ATTEMPTS",
-            )
-        # generate otp
-        new_otp = generate_numeric_otp()
-        # store it in redis:
-        # create otp_hash
-        new_otp_hash = hash_password(str(new_otp))
-        # change otp_hash, reset attempts to zero and reset expire time
-        async with redis_client.pipeline(transaction=True) as pipe:
-            pipe = redis_client.pipeline(transaction=True)
-            pipe.hset(
-                verification_id,
-                mapping={
-                    "otp_hash" : new_otp_hash,
-                    "attempts" : 0,
-                }
-            )
-            # reset expire time
-            pipe.expire(
-                verification_id,
-                datetime.timedelta(minutes=15)
-            )
-            # create cooldown key with 30 second expiry
-            pipe.set(
-                cooldown_key, 
-                "1", 
-                ex=datetime.timedelta(seconds=30)
-            )
-            await pipe.execute()
-            
-        return new_otp
-    except RedisError as e:
-        raise ServerError(
-            message=str(e),
-            code="REDIS_FAILURE",
-        )  
+        return response
+    except Exception:
+        raise
