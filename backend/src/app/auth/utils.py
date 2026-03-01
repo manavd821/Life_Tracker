@@ -40,7 +40,7 @@ import datetime
 import logging
 import uuid
 
-# < ----------- Access and Refresh Token Utilities ----------->
+# < ----------- PostgreSQL Utilities ----------->
 
 async def extract_refresh_token(request : Request, not_found_ok : bool = False):
     refresh_token = request.cookies.get("refresh_token")
@@ -274,7 +274,7 @@ async def get_redis_hash_data(
     except Exception:
         raise
  
-async def set_hash_with_verification_id_and_set_cooldown_key(
+async def set_hash_with_verification_id(
     redis_client : Redis,
     verification_id : str,
     data : dict,
@@ -329,7 +329,7 @@ async def store_data_in_redis_signup(
         flow="signup",
     )
     
-    await set_hash_with_verification_id_and_set_cooldown_key(
+    await set_hash_with_verification_id(
         redis_client=redis_client,
         verification_id=signup_verification_id,
         data=data.model_dump(),
@@ -357,7 +357,7 @@ async def store_data_in_redis_signin(
         email=email,
         flow="signin",
     )
-    await set_hash_with_verification_id_and_set_cooldown_key(
+    await set_hash_with_verification_id(
         redis_client=redis_client,
         verification_id=signin_verification_id,
         data=data.model_dump(),
@@ -447,7 +447,7 @@ async def resend_otp_using_redis(
         "otp_hash" : new_otp_hash,
         "attempts" : 0,
     }
-    await set_hash_with_verification_id_and_set_cooldown_key(
+    await set_hash_with_verification_id(
         redis_client=redis_client,
         verification_id=verification_id,
         data=data,
